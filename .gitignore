@@ -1,0 +1,28 @@
+# Build output
+bin/
+obj/
+out/
+
+# .NET secrets / env
+.env
+*.user
+appsettings.Development.json
+appsettings.Production.json
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.rsuser
+.idea/
+
+# Node
+node_modules/
+.next/
+
+# Docker volumes
+pgdata/
+
+# OS
+.DS_Store
+Thumbs.db

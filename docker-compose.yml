@@ -1,0 +1,67 @@
+﻿# РџРѕР»РЅС‹Р№ СЃС‚РµРє Favilonia РІ РєРѕРЅС‚РµР№РЅРµСЂР°С…: PostgreSQL + API + Frontend (+ Р±РѕС‚ РїРѕ РїСЂРѕС„РёР»СЋ).
+#
+#   docker compose up --build           - РїРѕРґРЅСЏС‚СЊ db + api + web (РѕР±С‰РёРµ Р»РѕРіРё РІ РѕРґРЅРѕРј РѕРєРЅРµ)
+#   docker compose --profile bot up      - РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅРѕ Р·Р°РїСѓСЃС‚РёС‚СЊ Telegram-Р±РѕС‚Р°
+#   docker compose logs -f api           - СЃРјРѕС‚СЂРµС‚СЊ Р»РѕРіРё РѕРґРЅРѕРіРѕ СЃРµСЂРІРёСЃР°
+#   docker compose down                  - РѕСЃС‚Р°РЅРѕРІРёС‚СЊ РІСЃС‘ (РґР°РЅРЅС‹Рµ Р‘Р” СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РІ С‚РѕРјРµ)
+#
+# РџР°СЂР°РјРµС‚СЂС‹ Р±РµСЂСѓС‚СЃСЏ РёР· С„Р°Р№Р»Р° .env (СЃРј. .env.example). Р—РЅР°С‡РµРЅРёСЏ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ Р·Р°РґР°РЅС‹ РЅРёР¶Рµ.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-POSTGRES_PASSWORD_HERE}
+      POSTGRES_DB: favilonia_db
+    ports:
+      # 5433 РЅР° С…РѕСЃС‚Рµ, С‡С‚РѕР±С‹ РЅРµ РєРѕРЅС„Р»РёРєС‚РѕРІР°С‚СЊ СЃ Р»РѕРєР°Р»СЊРЅРѕ СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹Рј PostgreSQL (5432).
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d favilonia_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./Backend
+      dockerfile: Favilonia.API/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=favilonia_db;Username=postgres;Password=${POSTGRES_PASSWORD:-POSTGRES_PASSWORD_HERE}"
+      Jwt__Key: "${JWT_KEY:-docker-dev-secret-key-change-me-1234567890}"
+    ports:
+      - "5011:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./Frontend
+      args:
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:5011}"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  bot:
+    build:
+      context: .
+      dockerfile: Bots/Favilonia.TelegramBot/Dockerfile
+    profiles: ["bot"]
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=favilonia_db;Username=postgres;Password=${POSTGRES_PASSWORD:-POSTGRES_PASSWORD_HERE}"
+      TelegramBot__Token: "${TELEGRAM_BOT_TOKEN:-}"
+      TelegramBot__OrganizationId: "${TELEGRAM_ORG_ID:-12345678-1234-1234-1234-123456789012}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
