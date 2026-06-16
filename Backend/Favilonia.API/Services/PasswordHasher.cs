@@ -1,4 +1,4 @@
-// Re-export from Infrastructure for backward compatibility
+// Переадресация в Infrastructure — единственное место реализации хэширования.
 using PasswordHasherInfra = Favilonia.Infrastructure.Services.PasswordHasher;
 
 namespace Favilonia.API.Services;

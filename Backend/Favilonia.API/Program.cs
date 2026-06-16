@@ -92,7 +92,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-// Initialize database with seed data
+// Применяем миграции и засеваем демо-данные при старте в Development
 
     if (app.Environment.IsDevelopment())
     {

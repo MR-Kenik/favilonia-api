@@ -1,111 +1,111 @@
-# Favilonia — Multi-Tenant SaaS for Educational Institutions
+# Favilonia — мультитенантный SaaS для образовательных учреждений
 
-REST API backend for a multi-tenant SaaS platform serving schools and educational organizations. Each tenant (organization) has full data isolation; a single backend instance serves multiple organizations simultaneously.
+REST API бэкенд SaaS-платформы для школ и образовательных организаций. Каждый клиент (организация) полностью изолирован на уровне данных — один экземпляр API обслуживает неограниченное количество организаций одновременно.
 
-Built with **ASP.NET Core 8**, **PostgreSQL**, **Entity Framework Core**, **Docker**.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | ASP.NET Core 8 Web API |
-| Database | PostgreSQL 16 + Entity Framework Core 8 |
-| Auth | JWT Bearer + Rotated Refresh Tokens |
-| Containerization | Docker + Docker Compose |
-| ORM | EF Core with Code-First migrations |
-| Validation | FluentValidation |
+Стек: **ASP.NET Core 8** · **PostgreSQL** · **Entity Framework Core** · **Docker**
 
 ---
 
-## Architecture Highlights
+## Технологии
 
-### Multi-Tenancy
-Every tenant-scoped endpoint is routed under `/api/organizations/{organizationId}/...` and protected by a custom `SameOrganization` authorization policy that compares the route parameter against the `organizationId` claim embedded in the JWT. Controllers additionally filter every query by `OrganizationId` as defense-in-depth.
-
-```
-Route:  /api/organizations/{organizationId:guid}/[controller]
-Policy: SameOrganization  →  OrganizationAuthorizationHandler
-Query:  .Where(x => x.OrganizationId == organizationId)
-```
-
-### Auth Flow
-- Login requires `organizationId + email + password` — composite key isolates tenants
-- Access token: ~60 min lifetime, embeds `organizationId` and `role` claims
-- Refresh token: 7-day lifetime, persisted in DB, **rotated on every use**
-- Password reset: time-limited one-time token, delivered via `IEmailService` (console stub included; swap for real SMTP)
-
-### Role-Based Access
-| Role | Access |
+| Слой | Технология |
 |---|---|
-| `SuperAdmin` | All organizations |
-| `Admin` | Own organization — full CRUD |
-| `User` (student) | Own organization — own data only (grades, attendance) |
+| Фреймворк | ASP.NET Core 8 Web API |
+| База данных | PostgreSQL 16 + Entity Framework Core 8 |
+| Авторизация | JWT Bearer + ротируемые Refresh-токены |
+| Контейнеризация | Docker + Docker Compose |
+| ORM | EF Core, Code-First миграции |
+| Валидация | FluentValidation |
 
-Student isolation pattern — forcibly overrides `studentId` from JWT on shared endpoints so students cannot read each other's data:
+---
+
+## Архитектурные особенности
+
+### Мультитенантность
+Каждый тенант-специфичный эндпоинт маршрутизируется через `/api/organizations/{organizationId}/...` и защищён кастомной политикой авторизации `SameOrganization`, которая сравнивает параметр маршрута с клеймом `organizationId` в JWT. Контроллеры дополнительно фильтруют каждый запрос по `OrganizationId` — эшелонированная защита.
+
+```
+Маршрут: /api/organizations/{organizationId:guid}/[controller]
+Политика: SameOrganization  →  OrganizationAuthorizationHandler
+Запрос:   .Where(x => x.OrganizationId == organizationId)
+```
+
+### Авторизация и токены
+- Логин требует `organizationId + email + password` — составной ключ изолирует тенанты
+- Access-токен: время жизни ~60 мин, содержит клеймы `organizationId` и `role`
+- Refresh-токен: 7 дней, хранится в БД, **ротируется при каждом использовании**
+- Сброс пароля: одноразовый токен с TTL 24ч, доставка через `IEmailService` (реализован консольный стаб — замени на SMTP)
+
+### Роли
+| Роль | Доступ |
+|---|---|
+| `SuperAdmin` | Все организации |
+| `Admin` | Своя организация — полный CRUD |
+| `User` (студент) | Своя организация — только свои данные (оценки, посещаемость) |
+
+Изоляция студента — принудительная подмена `studentId` из JWT на общих эндпоинтах, чтобы студент не мог читать данные других:
 ```csharp
 if (User.IsInRole(Roles.User))
     studentId = User.GetUserId();
 ```
 
-### Data Layer
-- `BaseEntity` provides `Id / CreatedAt / UpdatedAt`; timestamps set automatically in `SaveChanges`
-- Soft-delete via global query filters (`IsDeleted`) on Organization, News, Schedule, Page, Subject, Group, Period
-- Two FKs to the same table (e.g. `Grade.StudentId` + `Grade.TeacherId`) → `DeleteBehavior.Restrict` on both to avoid EF cascade conflict
-- Error handling centralized in `ApiExceptionHandlerMiddleware` + custom validation response factory
+### Слой данных
+- `BaseEntity` предоставляет `Id / CreatedAt / UpdatedAt`; временны́е метки проставляются автоматически в `SaveChanges`
+- Мягкое удаление через глобальные фильтры запросов (`IsDeleted`) на Organization, News, Schedule, Page, Subject, Group, Period
+- Два FK на одну таблицу (например `Grade.StudentId` + `Grade.TeacherId`) → `DeleteBehavior.Restrict` на обоих, чтобы избежать конфликта EF-каскадов
+- Централизованная обработка ошибок: `ApiExceptionHandlerMiddleware` + кастомная фабрика ответов на ошибки валидации
 
 ---
 
-## Project Structure
+## Структура проекта
 
 ```
 Backend/
 ├── Favilonia.API/
-│   ├── Authorization/        # SameOrganization, AdminOnly, SuperAdmin policies
-│   ├── Controllers/          # REST endpoints
-│   ├── Dtos/                 # Request / response models
-│   ├── Extensions/           # IServiceCollection, ClaimsPrincipal helpers
-│   ├── Middleware/           # Global exception handler
+│   ├── Authorization/        # Политики SameOrganization, AdminOnly, SuperAdmin
+│   ├── Controllers/          # REST-эндпоинты
+│   ├── Dtos/                 # Модели запросов и ответов
+│   ├── Extensions/           # Расширения IServiceCollection и ClaimsPrincipal
+│   ├── Middleware/           # Глобальный обработчик исключений
 │   ├── Services/             # JwtTokenGenerator, RefreshTokenService, EmailService
-│   └── Validation/           # FluentValidation validators
+│   └── Validation/           # Валидаторы FluentValidation
 ├── Favilonia.Domain/
-│   └── Entities/             # Domain models (Organization, User, Grade, Attendance …)
+│   └── Entities/             # Доменные модели (Organization, User, Grade, Attendance …)
 └── Favilonia.Infrastructure/
     ├── Data/
     │   ├── AppDbContext.cs
     │   ├── Migrations/
-    │   └── Seed/             # Demo org + users seeded in Development
+    │   └── Seed/             # Демо-организация и пользователи (только Development)
     └── Favilonia.Infrastructure.csproj
 ```
 
 ---
 
-## API Overview
+## Обзор API
 
-### Public (anonymous)
+### Публичные (без авторизации)
 ```
-GET  /api/public/{domain}              — org info by domain
-GET  /api/public/{domain}/news         — published news
-GET  /api/public/{domain}/schedule     — upcoming events
-GET  /api/public/{domain}/pages/{slug} — page by slug
-```
-
-### Auth
-```
-POST /api/auth/login            — returns access + refresh token
-POST /api/auth/refresh          — rotated refresh token
-POST /api/auth/logout           — revoke refresh token
-POST /api/auth/forgot-password  — generate reset token (logged to console)
-POST /api/auth/reset-password   — validate token, change password
+GET  /api/public/{domain}              — информация об организации по домену
+GET  /api/public/{domain}/news         — опубликованные новости
+GET  /api/public/{domain}/schedule     — предстоящие события
+GET  /api/public/{domain}/pages/{slug} — страница по slug
 ```
 
-### SaaS Onboarding
+### Аутентификация
 ```
-POST /api/organizations/register — create org + first admin, returns tokens
+POST /api/auth/login            — возвращает access + refresh токен
+POST /api/auth/refresh          — ротация refresh-токена
+POST /api/auth/logout           — отзыв refresh-токена
+POST /api/auth/forgot-password  — генерация токена сброса (логируется в консоль)
+POST /api/auth/reset-password   — проверка токена, смена пароля
 ```
 
-### Tenant-Scoped (require SameOrganization policy)
+### Онбординг
+```
+POST /api/organizations/register — создание организации + первого администратора, возвращает токены
+```
+
+### Тенант-специфичные (требуют политику SameOrganization)
 ```
 /api/organizations/{orgId}/users
 /api/organizations/{orgId}/news
@@ -120,75 +120,75 @@ POST /api/organizations/register — create org + first admin, returns tokens
 /api/organizations/{orgId}/feedback
 ```
 
-Full Swagger UI available at `/swagger` when running in Development.
+Полный Swagger UI доступен по адресу `/swagger` в режиме Development.
 
 ---
 
-## Running Locally
+## Запуск
 
-### Docker (recommended — includes PostgreSQL)
+### Docker (рекомендуется — включает PostgreSQL)
 
 ```bash
 cp .env.example .env
-# Edit .env: set POSTGRES_PASSWORD and JWT_KEY
+# Отредактируй .env: задай POSTGRES_PASSWORD и JWT_KEY
 docker compose up --build
 ```
 
 API: http://localhost:5011  
 Swagger: http://localhost:5011/swagger
 
-### Without Docker
+### Без Docker
 
-Requires PostgreSQL on `localhost:5432`. Set connection string and JWT key:
+Требуется PostgreSQL на `localhost:5432`. Задай строку подключения и JWT-ключ:
 
 ```bash
-# appsettings.json or environment variables:
+# В appsettings.json или переменных окружения:
 # ConnectionStrings__DefaultConnection = "Host=localhost;Port=5432;Database=favilonia_db;Username=postgres;Password=yourpassword"
-# Jwt__Key = "your-secret-key-at-least-16-chars"
+# Jwt__Key = "секретный-ключ-минимум-16-символов"
 
 dotnet run --project Backend/Favilonia.API
 ```
 
-The database is created and seeded automatically on first run (Development environment).
+База данных создаётся и засевается автоматически при первом запуске (режим Development).
 
-### Add EF Migration
+### Добавление EF-миграции
 
 ```bash
-dotnet ef migrations add <Name> \
+dotnet ef migrations add <Название> \
   --project Backend/Favilonia.Infrastructure \
   --startup-project Backend/Favilonia.API
 ```
 
 ---
 
-## Demo Credentials
+## Демо-данные
 
-Seeded automatically in Development:
+Засеваются автоматически в режиме Development:
 
-| Role | Email | Password |
+| Роль | Email | Пароль |
 |---|---|---|
-| Admin | admin@demo-school.local | Admin@123456 |
-| Student | ivanov@demo-school.local | User@123456 |
-| Student | petrova@demo-school.local | User@123456 |
+| Администратор | admin@demo-school.local | Admin@123456 |
+| Студент | ivanov@demo-school.local | User@123456 |
+| Студент | petrova@demo-school.local | User@123456 |
 
-Organization domain: `demo-school`  
-Organization ID: `12345678-1234-1234-1234-123456789012`
+Домен организации: `demo-school`  
+ID организации: `12345678-1234-1234-1234-123456789012`
 
 ---
 
-## Configuration
+## Конфигурация
 
-| Variable | Description |
+| Переменная | Описание |
 |---|---|
-| `ConnectionStrings__DefaultConnection` | PostgreSQL connection string |
-| `Jwt__Key` | JWT signing key (min 16 chars) |
-| `Jwt__ExpirationMinutes` | Access token lifetime (default: 60) |
-| `Jwt__RefreshTokenExpirationDays` | Refresh token lifetime (default: 7) |
+| `ConnectionStrings__DefaultConnection` | Строка подключения к PostgreSQL |
+| `Jwt__Key` | Секретный ключ JWT (минимум 16 символов) |
+| `Jwt__ExpirationMinutes` | Время жизни access-токена (по умолчанию: 60) |
+| `Jwt__RefreshTokenExpirationDays` | Время жизни refresh-токена (по умолчанию: 7) |
 
-Set via environment variables, `appsettings.json`, or `.env` (Docker).
+Задаются через переменные окружения, `appsettings.json` или файл `.env` (Docker).
 
 ---
 
-## License
+## Лицензия
 
 MIT
